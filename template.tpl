@@ -41,6 +41,25 @@ ___TEMPLATE_PARAMETERS___
     "help": "Collection name to tag this document with. Leave empty to use 'default'."
   },
   {
+    "type": "SELECT",
+    "name": "writeMode",
+    "displayName": "Write Mode",
+    "macrosInSelect": false,
+    "selectItems": [
+      {
+        "value": "merge",
+        "displayValue": "Merge (default)"
+      },
+      {
+        "value": "replace",
+        "displayValue": "Replace all values"
+      }
+    ],
+    "simpleValueType": true,
+    "defaultValue": "merge",
+    "help": "Merge: the fields you send are merged into the existing document, and fields you do not send are kept. Replace all values: the fields you send become the whole document. Any field not sent is DELETED."
+  },
+  {
     "type": "SIMPLE_TABLE",
     "name": "fieldsToSave",
     "displayName": "Fields to Save",
@@ -104,7 +123,8 @@ const response = fetch(url, {
   headers: {
     'Content-Type': 'application/json',
     'x-container-identifier': getRequestHeader('x-container-identifier'),
-    'x-user-id': getRequestHeader('x-user-id')
+    'x-user-id': getRequestHeader('x-user-id'),
+    'x-wascer-write-mode': data.writeMode === 'replace' ? 'replace' : 'merge'
   }
 }, JSON.stringify(payload));
 
