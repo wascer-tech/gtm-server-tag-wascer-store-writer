@@ -1,0 +1,67 @@
+const fetch = require('sendHttpRequest');
+const JSON = require('JSON');
+const getAllEventData = require('getAllEventData');
+const logToConsole = require('logToConsole');
+const getTimestampMillis = require('getTimestampMillis');
+const getRequestHeader = require('getRequestHeader');
+const encodeUriComponent = require('encodeUriComponent');
+
+const collection = data.collection ? data.collection : 'default';
+const documentId = data.documentId || 'auto-generated-' + getTimestampMillis();
+
+const fields = data.addEventData ? getAllEventData() : {};
+
+if (data.fieldsToSave && data.fieldsToSave.length > 0) {
+  data.fieldsToSave.forEach(function(field) {
+    if (field.fieldName && field.fieldValue !== undefined) {
+      let processedValue = field.fieldValue;
+      
+      fields[field.fieldName] = processedValue;
+    }
+  });
+}
+
+const currentTimestampMillis = getTimestampMillis();
+fields.timestamp = currentTimestampMillis;
+
+const url = getHost();
+
+fields.documentId = documentId;
+
+const payload = {
+  document_key: documentId,
+  data: fields
+};
+
+const response = fetch(url, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'x-container-identifier': getRequestHeader('x-container-identifier'),
+    'x-user-id': getRequestHeader('x-user-id'),
+    'x-wascer-write-mode': data.writeMode === 'replace' ? 'replace' : 'merge'
+  }
+}, JSON.stringify(payload));
+
+response.then((res) => {  
+  if (res.statusCode >= 200 && res.statusCode < 300) {
+    logToConsole('Dados salvos com sucesso no Waster Store');
+    data.gtmOnSuccess();
+  } else {
+    logToConsole('Erro ao salvar no Waster Store:', res.body);
+    data.gtmOnFailure();
+  }
+}).catch((error) => {
+  logToConsole('Request error:', error);
+  data.gtmOnFailure();
+});
+
+function getHost() {
+  const host = getRequestHeader('x-url-api') || '';
+
+  return (
+    host +
+    '/collections/' +
+    encodeUriComponent(collection)
+  );
+}

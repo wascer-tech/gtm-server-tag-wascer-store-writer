@@ -21,6 +21,13 @@ ___TEMPLATE_PARAMETERS___
 
 [
   {
+    "type": "TEXT",
+    "name": "systemLogEventType",
+    "displayName": "Event type (System Log)",
+    "simpleValueType": true,
+    "help": "Custom System Log event type. Empty uses event_name. Collection is controlled by the container toggle."
+  },
+  {
     "type": "CHECKBOX",
     "name": "addEventData",
     "checkboxText": "Add Event Data",
@@ -118,6 +125,8 @@ const payload = {
   data: fields
 };
 
+const serialized = JSON.stringify(payload);
+const started = getTimestampMillis();
 const response = fetch(url, {
   method: 'POST',
   headers: {
@@ -126,9 +135,11 @@ const response = fetch(url, {
     'x-user-id': getRequestHeader('x-user-id'),
     'x-wascer-write-mode': data.writeMode === 'replace' ? 'replace' : 'merge'
   }
-}, JSON.stringify(payload));
+}, serialized);
 
-response.then((res) => {  
+response.then((res) => {
+  copySystemLog('wascer_store', 'Wascer Store Writer', url, 'POST', serialized, res.statusCode, res.body, started);
+
   if (res.statusCode >= 200 && res.statusCode < 300) {
     logToConsole('Dados salvos com sucesso no Waster Store');
     data.gtmOnSuccess();
@@ -138,6 +149,7 @@ response.then((res) => {
   }
 }).catch((error) => {
   logToConsole('Request error:', error);
+  copySystemLog('wascer_store', 'Wascer Store Writer', url, 'POST', serialized, 0, error && (error.body || error.reason), started);
   data.gtmOnFailure();
 });
 
@@ -149,6 +161,39 @@ function getHost() {
     '/collections/' +
     encodeUriComponent(collection)
   );
+}
+
+// System Log is controlled by the proxy header, never by tag configuration.
+// Deliberately detached: neither delivery nor collector failure gates tag completion.
+function copySystemLog(platform, tagName, requestUrl, requestMethod, requestBody, responseStatus, responseBody, started) {
+  if (getRequestHeader('x-wascer-log') !== '1') return;
+  const getTimestampMillis = require('getTimestampMillis');
+  const Promise = require('Promise');
+  const elapsed = getTimestampMillis() - started;
+  const duration = elapsed < 0 ? 0 : elapsed > 4294967295 ? 4294967295 : elapsed;
+  Promise.create((resolve) => resolve()).then(() => {
+    const getEventData = require('getEventData');
+    const getType = require('getType');
+    const eventName = getEventData('event_name');
+    const envelope = {
+      trace_id: getRequestHeader('x-wascer-trace-id') || '',
+      platform: platform,
+      tag_name: tagName,
+      event_name: getType(eventName) === 'string' ? eventName : '',
+      event_type: data.systemLogEventType || (getType(eventName) === 'string' ? eventName : ''),
+      request_method: requestMethod,
+      request_url: requestUrl,
+      request_body: requestBody,
+      response_status: responseStatus || 0,
+      response_body: getType(responseBody) === 'string' ? responseBody : '',
+      duration_ms: duration
+    };
+    return require('sendHttpRequest')('https://system-log.wascer.internal/log', {
+      method: 'POST',
+      timeout: 500,
+      headers: {'Content-Type': 'application/json'}
+    }, JSON.stringify(envelope));
+  }).then(() => {}, () => {});
 }
 
 
@@ -230,6 +275,36 @@ ___SERVER_PERMISSIONS___
           "value": {
             "type": 2,
             "listItem": [
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "headerName"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "x-wascer-log"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "headerName"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "x-wascer-trace-id"
+                  }
+                ]
+              },
               {
                 "type": 3,
                 "mapKey": [
@@ -339,4 +414,17 @@ scenarios: []
 ___NOTES___
 
 Created on 02/06/2025, 21:46:45
+
+System Log (manual template import; no remote publication):
+Only x-wascer-log: 1 enables a best-effort output copy after the Wascer Store
+request finishes. The copy goes only to https://system-log.wascer.internal/log
+(pod loopback, trusted TLS on 443) and carries x-wascer-trace-id as trace_id.
+Event type (System Log) is free text; empty uses event_name.
+The request URL (x-url-api + /collections/<collection>), the request body and the
+response body are the original strings, without masking, projection or truncation.
+Network failures use status 0 and the available error body/reason. No headers,
+credentials, config fetch, modes, queue or retry are added.
+The logger is detached from tag completion; late delivery remains best-effort.
+Existing send_http permission remains any; the logging destination is fixed in
+code to the exact loopback URL and never derives from a tag field.
 

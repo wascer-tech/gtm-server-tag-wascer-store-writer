@@ -32,6 +32,7 @@ for anyone to use.
 | Document ID | Text (optional) | Id of the document to write. Leave empty to let the store generate one. |
 | Collection | Text (optional) | Collection the document belongs to. Falls back to the default collection. |
 | Fields to Save | Table | Key/value pairs written into the document, on top of the event data. |
+| Event type (System Log) | Text (optional) | Label for the System Log copy. Empty uses the event name. See below. |
 | Write Mode | Select | How the write is applied. `Merge (default)` or `Replace all values`. See below. |
 
 ## Write modes
@@ -56,6 +57,33 @@ objects are replaced whole rather than merged field by field.
 Under the hood the tag sends the chosen mode in the `x-wascer-write-mode`
 request header. A server that does not know the header falls back to merging, so
 the tag stays compatible with older container images.
+
+## System Log
+
+When the server container has logging turned on, the tag also sends a copy of
+what it sent to the Wascer Store, and of the answer it got back, to the Wascer
+System Log. The copy holds the request URL, method and body, the response status
+and body, how long the request took, the event name and your **Event type
+(System Log)** label (the event name when the label is empty).
+
+This only happens when logging is turned on for the container: the hosting proxy
+sets the `x-wascer-log: 1` request header (and `x-wascer-trace-id` to correlate
+the copy). Without that header the tag does nothing extra. Nothing is masked: the
+request and response bodies are copied exactly as they were sent and received.
+The copy is best effort and never changes the result of the tag.
+
+## Updating the template
+
+To bring a workspace that already has an older version of this template up to date:
+
+1. In your **server** container, open **Templates**, then **Tag Templates**,
+   and open the Wascer Store Writer template.
+2. Open the three dot menu and choose **Import**.
+3. Pick the new `template.tpl` from this repository and save the template.
+4. **Publish** the workspace (Submit, then Publish) so the live container picks
+   up the new version.
+
+Tags already created from the template keep the values you filled in.
 
 ## Requirements
 
